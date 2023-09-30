@@ -4,7 +4,7 @@ import keyboard
 
 running = True
 
-opacity_step_1 = 30
+opacity_step_1 = 10
 
 opacity_step_10 = 255
 
@@ -15,6 +15,8 @@ def changeWindowOpacity():
 
     win32gui.SetWindowLong (hwnd, win32con.GWL_EXSTYLE, win32gui.GetWindowLong (hwnd, win32con.GWL_EXSTYLE ) | win32con.WS_EX_LAYERED )
     winxpgui.SetLayeredWindowAttributes(hwnd, win32api.RGB(0,0,0), opacity, win32con.LWA_ALPHA)
+
+print("Welcome to transparent-windows by Sophia. Use the shift key in combination with number keys 1-9 to change the transparency of the active window. 1 is almost completely transparent. 9 is completely opaque")
 
 while True:
     event = keyboard.read_event()
