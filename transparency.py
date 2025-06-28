@@ -24,34 +24,36 @@ class TransparentWindowsApp:
         self.opacity_step_10 = 255
         self.opacity = 30
         self.icon = None
+        self.settings_file = "transparent_windows_settings.json"
         
-        # Default keyboard shortcuts
+        # Default shortcuts
         self.default_shortcuts = {
-            'modifier_keys': ['ctrl', 'shift', 'alt'],
-            'number_keys': ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+            'modifier1': 'ctrl',
+            'modifier2': 'shift', 
+            'modifier3': 'alt',
+            'block_input': True
         }
         
-        # Load or create settings
-        self.settings_file = "transparent_windows_settings.json"
+        # Load settings
         self.shortcuts = self.load_settings()
         
     def load_settings(self):
-        """Load keyboard shortcuts from settings file"""
+        """Load shortcuts from settings file"""
         try:
             if os.path.exists(self.settings_file):
                 with open(self.settings_file, 'r') as f:
                     settings = json.load(f)
                     # Validate settings
-                    if 'modifier_keys' in settings and 'number_keys' in settings:
+                    if all(key in settings for key in self.default_shortcuts.keys()):
                         return settings
         except Exception as e:
             print(f"Error loading settings: {e}")
         
-        # Return default settings if loading fails
+        # Return defaults if loading fails
         return self.default_shortcuts.copy()
     
     def save_settings(self):
-        """Save keyboard shortcuts to settings file"""
+        """Save shortcuts to settings file"""
         try:
             with open(self.settings_file, 'w') as f:
                 json.dump(self.shortcuts, f, indent=2)
@@ -60,11 +62,17 @@ class TransparentWindowsApp:
             print(f"Error saving settings: {e}")
             return False
     
-    def get_shortcut_string(self):
-        """Get a readable string of current shortcuts"""
-        modifiers = '+'.join([key.title() for key in self.shortcuts['modifier_keys']])
-        return f"{modifiers}+0-9"
+    def get_shortcut_display(self):
+        """Get human-readable shortcut combination"""
+        modifiers = []
+        for mod_key in ['modifier1', 'modifier2', 'modifier3']:
+            if self.shortcuts.get(mod_key):
+                modifiers.append(self.shortcuts[mod_key].title())
         
+        if modifiers:
+            return " + ".join(modifiers) + " + 0-9"
+        return "0-9"
+    
     def change_window_opacity(self):
         """Apply transparency to the currently active window"""
         try:
@@ -73,9 +81,9 @@ class TransparentWindowsApp:
             if hwnd:
                 window_title = win32gui.GetWindowText(hwnd)
                 
-                # Skip our own windows to prevent crashes
+                # # Skip our own windows to prevent crashes
                 # if any(skip_word in window_title.lower() for skip_word in 
-                #       ['transparent windows', 'about', 'error', 'message', 'settings']):
+                #       ['transparent windows', 'about', 'error', 'message', 'options', 'settings']):
                 #     print(f"Skipping window: {window_title}")
                 #     return
                 
@@ -89,26 +97,43 @@ class TransparentWindowsApp:
         except Exception as e:
             print(f"Error changing opacity: {e}")
     
-    def are_modifiers_pressed(self):
-        """Check if all modifier keys are currently pressed"""
+    def is_shortcut_active(self):
+        """Check if the current shortcut combination is pressed"""
         try:
-            for key in self.shortcuts['modifier_keys']:
-                if not keyboard.is_pressed(key):
-                    return False
-            return True
+            modifiers_pressed = True
+            
+            # Check each modifier
+            for mod_key in ['modifier1', 'modifier2', 'modifier3']:
+                modifier = self.shortcuts.get(mod_key)
+                if modifier and modifier.strip():
+                    if not keyboard.is_pressed(modifier):
+                        modifiers_pressed = False
+                        break
+            
+            return modifiers_pressed
         except:
             return False
     
     def keyboard_listener(self):
         """Listen for keyboard shortcuts"""
-        shortcut_str = self.get_shortcut_string()
-        print(f"Keyboard listener started. Use {shortcut_str} to change transparency.")
+        shortcut_display = self.get_shortcut_display()
+        print(f"Keyboard listener started. Use {shortcut_display} to change transparency.")
+        
+        # Valid number keys
+        valid_keys = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']
+        last_trigger_time = 0
         
         while self.running:
             try:
-                if self.are_modifiers_pressed():
-                    for key in self.shortcuts['number_keys']:
+                if self.is_shortcut_active():
+                    current_time = time.time()
+                    
+                    for key in valid_keys:
                         if keyboard.is_pressed(key):
+                            # Prevent rapid triggering
+                            if current_time - last_trigger_time < 0.3:
+                                continue
+                            
                             num = int(key)
                             
                             if num == 0:
@@ -122,7 +147,20 @@ class TransparentWindowsApp:
                                 self.opacity = round(self.opacity_step_1 + ((self.opacity_step_10 - self.opacity_step_1) / 8) * (num - 1))
                             
                             self.change_window_opacity()
-                            # time.sleep(0.4)  # Prevent multiple triggers
+                            last_trigger_time = current_time
+                            
+                            # Block the input if enabled
+                            if self.shortcuts.get('block_input', True):
+                                try:
+                                    # Suppress the key event
+                                    keyboard.block_key(key)
+                                    time.sleep(0.1)
+                                    keyboard.unblock_key(key)()
+                                    print("Succesfully blocked input")
+                                except:
+                                    print("Failed to blocked input")
+                                    pass  # If blocking fails, continue anyway
+                            
                             break
                 
                 time.sleep(0.05)  # Prevent excessive CPU usage
@@ -152,47 +190,47 @@ class TransparentWindowsApp:
             root = tk.Tk()
             root.withdraw()
             
-            shortcut_str = self.get_shortcut_string()
+            shortcut_display = self.get_shortcut_display()
             about_text = f"""Transparent Windows by Sophia
 
-Current Keyboard Shortcuts:
-• {shortcut_str.replace('0-9', '0')}: Nearly invisible (1%)
-• {shortcut_str.replace('0-9', '1')}: Most transparent (10%)
-• {shortcut_str.replace('0-9', '2-8')}: Gradual transparency levels
-• {shortcut_str.replace('0-9', '9')}: Fully opaque (100%)
+Current Shortcuts: {shortcut_display}
+• 0: Nearly invisible (1%)
+• 1: Most transparent (10%)
+• 2-8: Gradual transparency levels
+• 9: Fully opaque (100%)
 
 Usage:
 1. Focus on any window
-2. Press {shortcut_str.replace('0-9', 'number key (0-9)')}
+2. Press your shortcut combination + number key
 3. Window becomes transparent
 
 Right-click the tray icon for options.
-Use Settings to customize keyboard shortcuts."""
+You can customize shortcuts in Options."""
             
             messagebox.showinfo("About Transparent Windows", about_text)
             root.destroy()
         
         threading.Thread(target=show_dialog, daemon=True).start()
     
-    def show_settings(self):
-        """Show settings dialog for customizing keyboard shortcuts"""
-        def show_settings_dialog():
-            settings_window = tk.Tk()
-            settings_window.title("Transparent Windows - Settings")
-            settings_window.geometry("500x500")
-            settings_window.resizable(False, False)
+    def show_options(self):
+        """Show options dialog for customizing shortcuts"""
+        def show_options_dialog():
+            root = tk.Tk()
+            root.title("Transparent Windows - Options")
+            # root.geometry("450x350")
+            root.resizable(True, True)
             
             # Center the window
-            settings_window.update_idletasks()
-            x = (settings_window.winfo_screenwidth() // 2) - (500 // 2)
-            y = (settings_window.winfo_screenheight() // 2) - (400 // 2)
-            settings_window.geometry(f"+{x}+{y}")
+            root.update_idletasks()
+            x = (root.winfo_screenwidth() // 2) - (450 // 2)
+            y = (root.winfo_screenheight() // 2) - (600 // 2)
+            root.geometry(f"450x600+{x}+{y}")
             
-            main_frame = tk.Frame(settings_window, padx=20, pady=20)
+            main_frame = tk.Frame(root, padx=20, pady=20)
             main_frame.pack(fill='both', expand=True)
             
             # Title
-            title_label = tk.Label(main_frame, text="Keyboard Shortcut Settings", 
+            title_label = tk.Label(main_frame, text="Shortcut Options", 
                                   font=('Arial', 14, 'bold'))
             title_label.pack(pady=(0, 20))
             
@@ -200,82 +238,116 @@ Use Settings to customize keyboard shortcuts."""
             current_frame = tk.LabelFrame(main_frame, text="Current Shortcuts", padx=10, pady=10)
             current_frame.pack(fill='x', pady=(0, 20))
             
-            current_shortcut = self.get_shortcut_string()
-            current_label = tk.Label(current_frame, text=f"Active: {current_shortcut}", 
-                                   font=('Arial', 12, 'bold'), fg='green')
+            current_label = tk.Label(current_frame, text=f"Current: {self.get_shortcut_display()}", 
+                                   font=('Arial', 10))
             current_label.pack()
             
-            # Modifier keys selection
-            modifier_frame = tk.LabelFrame(main_frame, text="Modifier Keys (Select multiple)", padx=10, pady=10)
-            modifier_frame.pack(fill='x', pady=(0, 10))
+            # Modifier selection
+            modifier_frame = tk.LabelFrame(main_frame, text="Customize Modifiers", padx=10, pady=10)
+            modifier_frame.pack(fill='x', pady=(0, 20))
             
-            # Modifier key checkboxes
-            modifier_vars = {}
-            available_modifiers = ['ctrl', 'shift', 'alt', 'win']
+            modifier_options = ['', 'ctrl', 'shift', 'alt', 'win']
             
-            for i, mod in enumerate(available_modifiers):
-                var = tk.BooleanVar()
-                var.set(mod in self.shortcuts['modifier_keys'])
-                modifier_vars[mod] = var
-                
-                cb = tk.Checkbutton(modifier_frame, text=mod.title(), variable=var)
-                cb.grid(row=i//2, column=i%2, sticky='w', padx=10, pady=2)
+            # Modifier 1
+            tk.Label(modifier_frame, text="Modifier 1:").grid(row=0, column=0, sticky='w', pady=2)
+            mod1_var = tk.StringVar(value=self.shortcuts.get('modifier1', ''))
+            mod1_combo = ttk.Combobox(modifier_frame, textvariable=mod1_var, values=modifier_options, width=10)
+            mod1_combo.grid(row=0, column=1, padx=(10, 0), pady=2)
             
-            # Instructions
-            instruction_frame = tk.Frame(main_frame)
-            instruction_frame.pack(fill='x', pady=(0, 20))
+            # Modifier 2
+            tk.Label(modifier_frame, text="Modifier 2:").grid(row=1, column=0, sticky='w', pady=2)
+            mod2_var = tk.StringVar(value=self.shortcuts.get('modifier2', ''))
+            mod2_combo = ttk.Combobox(modifier_frame, textvariable=mod2_var, values=modifier_options, width=10)
+            mod2_combo.grid(row=1, column=1, padx=(10, 0), pady=2)
             
-            instruction_text = """Instructions:
-• Select at least one modifier key (Ctrl, Shift, Alt, Win)
-• The number keys 0-9 will be used automatically
-• Avoid common combinations like Ctrl+C, Ctrl+V, etc.
-• Recommended: Ctrl+Shift+Alt for maximum compatibility"""
+            # Modifier 3
+            tk.Label(modifier_frame, text="Modifier 3:").grid(row=2, column=0, sticky='w', pady=2)
+            mod3_var = tk.StringVar(value=self.shortcuts.get('modifier3', ''))
+            mod3_combo = ttk.Combobox(modifier_frame, textvariable=mod3_var, values=modifier_options, width=10)
+            mod3_combo.grid(row=2, column=1, padx=(10, 0), pady=2)
             
-            instruction_label = tk.Label(instruction_frame, text=instruction_text, 
-                                       justify='left', wraplength=450)
-            instruction_label.pack()
+            # Block input option
+            block_frame = tk.LabelFrame(main_frame, text="Input Blocking", padx=10, pady=10)
+            block_frame.pack(fill='x', pady=(0, 20))
+            
+            block_var = tk.BooleanVar(value=self.shortcuts.get('block_input', True))
+            block_check = tk.Checkbutton(block_frame, 
+                                       text="Block default key behavior when using shortcuts\n(Prevents typing numbers when shortcuts are pressed)",
+                                       variable=block_var, wraplength=350)
+            block_check.pack(anchor='w')
+            
+            # Preset buttons
+            preset_frame = tk.LabelFrame(main_frame, text="Quick Presets", padx=10, pady=10)
+            preset_frame.pack(fill='x', pady=(0, 20))
+            
+            def apply_preset(preset):
+                if preset == "safe":
+                    mod1_var.set('ctrl')
+                    mod2_var.set('shift')
+                    mod3_var.set('alt')
+                elif preset == "simple":
+                    mod1_var.set('ctrl')
+                    mod2_var.set('alt')
+                    mod3_var.set('')
+                elif preset == "minimal":
+                    mod1_var.set('shift')
+                    mod2_var.set('')
+                    mod3_var.set('')
+            
+            preset_btn_frame = tk.Frame(preset_frame)
+            preset_btn_frame.pack()
+            
+            tk.Button(preset_btn_frame, text="Safe (Ctrl+Shift+Alt)", 
+                     command=lambda: apply_preset("safe")).pack(side='left', padx=5)
+            tk.Button(preset_btn_frame, text="Simple (Ctrl+Alt)", 
+                     command=lambda: apply_preset("simple")).pack(side='left', padx=5)
+            tk.Button(preset_btn_frame, text="Minimal (Shift)", 
+                     command=lambda: apply_preset("minimal")).pack(side='left', padx=5)
             
             # Buttons
             button_frame = tk.Frame(main_frame)
-            button_frame.pack(fill='x', pady=(10, 0))
+            button_frame.pack(pady=10)
             
-            def apply_settings():
-                # Get selected modifiers
-                selected_modifiers = [mod for mod, var in modifier_vars.items() if var.get()]
+            def save_and_close():
+                # Save new settings
+                new_shortcuts = {
+                    'modifier1': mod1_var.get(),
+                    'modifier2': mod2_var.get(),
+                    'modifier3': mod3_var.get(),
+                    'block_input': block_var.get()
+                }
                 
-                if not selected_modifiers:
-                    messagebox.showerror("Error", "Please select at least one modifier key.")
-                    return
-                
-                # Update shortcuts
-                old_shortcut = self.get_shortcut_string()
-                self.shortcuts['modifier_keys'] = selected_modifiers
-                new_shortcut = self.get_shortcut_string()
-                
-                # Save settings
+                self.shortcuts = new_shortcuts
                 if self.save_settings():
                     messagebox.showinfo("Settings Saved", 
-                                      f"Shortcuts updated!\n\nOld: {old_shortcut}\nNew: {new_shortcut}\n\nRestart may be required for changes to take full effect.")
-                    settings_window.destroy()
+                                      f"New shortcuts: {self.get_shortcut_display()}\n\nRestart may be required for full effect.")
                 else:
                     messagebox.showerror("Error", "Failed to save settings.")
+                
+                root.destroy()
             
             def reset_defaults():
-                if messagebox.askyesno("Reset to Defaults", "Reset to default shortcuts (Ctrl+Shift+Alt+0-9)?"):
+                result = messagebox.askyesno("Reset to Defaults", 
+                                           "Reset to default shortcuts (Ctrl+Shift+Alt+0-9)?")
+                if result:
                     self.shortcuts = self.default_shortcuts.copy()
                     if self.save_settings():
-                        messagebox.showinfo("Reset Complete", "Settings reset to defaults.\nRestart may be required.")
-                        settings_window.destroy()
-                    else:
-                        messagebox.showerror("Error", "Failed to reset settings.")
+                        messagebox.showinfo("Reset Complete", "Settings reset to defaults.")
+                        root.destroy()
             
-            tk.Button(button_frame, text="Apply", command=apply_settings, width=12).pack(side='left', padx=(0, 10))
-            tk.Button(button_frame, text="Reset to Defaults", command=reset_defaults, width=15).pack(side='left', padx=(0, 10))
-            tk.Button(button_frame, text="Cancel", command=settings_window.destroy, width=12).pack(side='right')
+            tk.Button(button_frame, text="Save", command=save_and_close, width=10).pack(side='left', padx=5)
+            tk.Button(button_frame, text="Reset Defaults", command=reset_defaults, width=12).pack(side='left', padx=5)
+            tk.Button(button_frame, text="Cancel", command=root.destroy, width=10).pack(side='left', padx=5)
             
-            settings_window.mainloop()
+            # Instructions
+            instructions = tk.Label(main_frame, 
+                                  text="Leave modifier fields empty to disable them.\nExample: Only 'Modifier 1' = Ctrl+0-9",
+                                  font=('Arial', 8), fg='gray')
+            instructions.pack(pady=(10, 0))
+            
+            root.mainloop()
         
-        threading.Thread(target=show_settings_dialog, daemon=True).start()
+        threading.Thread(target=show_options_dialog, daemon=True).start()
     
     def reset_all_windows(self):
         """Reset all windows to full opacity"""
@@ -333,23 +405,24 @@ Use Settings to customize keyboard shortcuts."""
         try:
             image = self.create_tray_icon()
             
-            shortcut_str = self.get_shortcut_string()
             menu = pystray.Menu(
                 item('About', self.show_about),
-                item('Settings', self.show_settings),
+                item('Options', self.show_options),
                 item('Reset All Windows', self.reset_all_windows),
                 pystray.Menu.SEPARATOR,
                 item('Quit', self.quit_app)
             )
             
-            self.icon = pystray.Icon("TransparentWindows", image, f"Transparent Windows - {shortcut_str}", menu)
+            shortcut_display = self.get_shortcut_display()
+            self.icon = pystray.Icon("TransparentWindows", image, f"Transparent Windows - {shortcut_display}", menu)
             
+            # Start keyboard listener in background
             keyboard_thread = threading.Thread(target=self.keyboard_listener, daemon=True)
             keyboard_thread.start()
             
             print("Transparent Windows is running in the system tray.")
             print("Look for the icon in the bottom-right corner of your screen.")
-            print(f"Use {shortcut_str} to change window transparency.")
+            print(f"Use {shortcut_display} to change window transparency.")
             
             self.icon.run()
             
@@ -360,12 +433,11 @@ Use Settings to customize keyboard shortcuts."""
     
     def run_console_mode(self):
         """Fallback console mode if system tray fails"""
-        shortcut_str = self.get_shortcut_string()
-        
         print("\n" + "="*50)
         print("TRANSPARENT WINDOWS - CONSOLE MODE")
         print("="*50)
-        print(f"Use {shortcut_str} to change window transparency:")
+        shortcut_display = self.get_shortcut_display()
+        print(f"Use {shortcut_display} to change window transparency:")
         print("• 0 = Nearly invisible (1%)")
         print("• 1 = Most transparent (10%)")
         print("• 9 = Fully opaque (100%)")
